@@ -9,6 +9,7 @@ import ordersRouter from "./routes/orders";
 import reviewsRouter from "./routes/reviews";
 import favoritesRouter from "./routes/favorites";
 import adminRouter from "./routes/admin";
+import uploadRouter from "./routes/upload";
 import { errorHandler } from "./middleware/error";
 
 export const app = express();
@@ -31,6 +32,7 @@ app.use("/api/cart", cartRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/reviews", reviewsRouter);
 app.use("/api/favorites", favoritesRouter);
+app.use("/api/admin/upload", uploadRouter);
 app.use("/api/admin", adminRouter);
 
 app.use(errorHandler);
