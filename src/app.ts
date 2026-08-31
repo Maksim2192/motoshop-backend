@@ -35,4 +35,10 @@ app.use("/api/favorites", favoritesRouter);
 app.use("/api/admin/upload", uploadRouter);
 app.use("/api/admin", adminRouter);
 
+app.get("/api/admin/upload", (_req, res) => {
+  res.json({
+    message: "Upload route exists",
+  });
+});
+
 app.use(errorHandler);
