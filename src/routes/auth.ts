@@ -25,7 +25,7 @@ function setToken(res: any, id: number, role: "USER" | "ADMIN") {
 
   res.cookie("accessToken", token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "none",
     secure: process.env.NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
