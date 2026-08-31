@@ -4,6 +4,13 @@ import { prisma } from "../lib/prisma";
 
 const router = Router();
 
+router.get("/test", (_req, res) => {
+  res.json({
+    message: "NEW ORDERS ROUTE WORKS",
+    version: "v2",
+  });
+});
+
 const orderSchema = z.object({
   customer: z.object({
     name: z.string().min(2),
