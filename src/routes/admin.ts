@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { auth } from "../middleware/auth";
+import { resend } from "../lib/resend";
 
 const router = Router();
 
@@ -61,6 +62,15 @@ const orderStatusSchema = z.object({
   ]),
 });
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+    .replace(/\n/g, "<br />");
+}
 
 // =========================
 // STATS
@@ -175,6 +185,141 @@ router.patch(
 
       return res.json({
         data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+
+
+router.post(
+  "/contacts/:id/reply",
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid message ID",
+        });
+      }
+
+      const { reply } = z
+        .object({
+          reply: z
+            .string()
+            .trim()
+            .min(2, "Відповідь занадто коротка")
+            .max(5000),
+        })
+        .parse(req.body);
+
+      const contactMessage =
+        await prisma.contactMessage.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!contactMessage) {
+        return res.status(404).json({
+          message: "Повідомлення не знайдено",
+        });
+      }
+
+      const { data, error } =
+        await resend.emails.send({
+          from:
+            process.env.RESEND_FROM_EMAIL ||
+            "MotoShop <onboarding@resend.dev>",
+
+          to: [contactMessage.email],
+
+          subject: "Відповідь від MotoShop",
+
+          html: `
+            <div
+              style="
+                max-width:600px;
+                margin:0 auto;
+                font-family:Arial,sans-serif;
+                color:#171717;
+              "
+            >
+              <h2>
+                Вітаємо, ${escapeHtml(contactMessage.name)}!
+              </h2>
+
+              <p>
+                Ви зверталися до MotoShop із повідомленням:
+              </p>
+
+              <div
+                style="
+                  padding:16px;
+                  margin:20px 0;
+                  background:#f5f5f5;
+                  border-radius:10px;
+                "
+              >
+                ${escapeHtml(contactMessage.message)}
+              </div>
+
+              <p>
+                <strong>
+                  Наша відповідь:
+                </strong>
+              </p>
+
+              <div
+                style="
+                  padding:16px;
+                  margin:20px 0;
+                  background:#111;
+                  color:#fff;
+                  border-radius:10px;
+                "
+              >
+                ${escapeHtml(reply)}
+              </div>
+
+              <p>
+                Дякуємо, що звернулися до MotoShop.
+              </p>
+            </div>
+          `,
+        });
+
+      if (error) {
+        console.error("RESEND ERROR:", error);
+
+        return res.status(502).json({
+          message:
+            error.message ||
+            "Не вдалося відправити email",
+        });
+      }
+
+      const updated =
+        await prisma.contactMessage.update({
+          where: {
+            id,
+          },
+
+          data: {
+            reply,
+            repliedAt: new Date(),
+            isRead: true,
+          },
+        });
+
+      return res.json({
+        message:
+          "Відповідь успішно відправлено",
+        data: updated,
+        emailId: data?.id,
       });
     } catch (error) {
       next(error);
