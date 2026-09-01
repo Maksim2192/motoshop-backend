@@ -377,5 +377,80 @@ router.patch(
   }
 );
 
+router.get("/contacts", async (_req, res, next) => {
+  try {
+    const messages = await prisma.contactMessage.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return res.json({
+      data: messages,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch(
+  "/contacts/:id/read",
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid message ID",
+        });
+      }
+
+      const message =
+        await prisma.contactMessage.update({
+          where: {
+            id,
+          },
+
+          data: {
+            isRead: true,
+          },
+        });
+
+      return res.json({
+        data: message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.delete(
+  "/contacts/:id",
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid message ID",
+        });
+      }
+
+      await prisma.contactMessage.delete({
+        where: {
+          id,
+        },
+      });
+
+      return res.json({
+        message: "Message deleted",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 
 export default router;
