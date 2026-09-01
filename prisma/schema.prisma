@@ -148,10 +148,16 @@ model Favorite {
 
 model ContactMessage {
   id        Int      @id @default(autoincrement())
+
   name      String
   phone     String
   email     String
   message   String
+
   isRead    Boolean  @default(false)
+
+  reply     String?
+  repliedAt DateTime?
+
   createdAt DateTime @default(now())
 }
