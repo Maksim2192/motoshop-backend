@@ -145,3 +145,13 @@ model Favorite {
 
   @@unique([userId, productId])
 }
+
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String
+  email     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

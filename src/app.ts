@@ -11,6 +11,7 @@ import favoritesRouter from "./routes/favorites";
 import adminRouter from "./routes/admin";
 import uploadRouter from "./routes/upload";
 import { errorHandler } from "./middleware/error";
+import contactsRouter from "./routes/contacts";
 
 export const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/cart", cartRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/reviews", reviewsRouter);
 app.use("/api/favorites", favoritesRouter);
+app.use("/api/contacts", contactsRouter);
 app.use("/api/admin/upload", uploadRouter);
 app.use("/api/admin", adminRouter);
 
