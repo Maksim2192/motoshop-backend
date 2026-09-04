@@ -31,7 +31,8 @@ model User {
 
   resetPasswordToken     String?
   resetPasswordExpiresAt DateTime?
-
+  
+  reviews Review[]
   cart      Cart?
   orders    Order[]
   reviews   Review[]
@@ -128,13 +129,16 @@ model OrderItem {
 
 model Review {
   id        Int      @id @default(autoincrement())
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   userId    Int
   productId Int
-  rating    Int
-  comment   String
+
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
 
   @@unique([userId, productId])
 }
