@@ -1,4 +1,8 @@
-import { PrismaClient, Prisma } from "@prisma/client";
+import {
+  PrismaClient,
+  Prisma,
+} from "@prisma/client";
+
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -15,41 +19,70 @@ type SeedProduct = {
   categorySlug: string;
 };
 
-async function main() {
-  const password = await bcrypt.hash(
-    "12345678",
-    10
-  );
+type ProductTemplate = {
+  category: string;
+  baseName: string;
+  description: string;
+  basePrice: number;
+};
 
-  const admin = await prisma.user.upsert({
+function createSlug(
+  value: string
+) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(
+      /[^a-z0-9а-яіїєґ]+/gi,
+      "-"
+    )
+    .replace(
+      /^-+|-+$/g,
+      ""
+    );
+}
+
+async function main() {
+  const password =
+    await bcrypt.hash(
+      "12345678",
+      10
+    );
+
+  await prisma.user.upsert({
     where: {
-      email: "admin@motoshop.local",
+      email:
+        "admin@motoshop.local",
     },
 
     update: {},
 
     create: {
       name: "Admin",
-      email: "admin@motoshop.local",
+      email:
+        "admin@motoshop.local",
       password,
       role: "ADMIN",
     },
   });
 
-  const user = await prisma.user.upsert({
-    where: {
-      email: "user@motoshop.local",
-    },
+  const user =
+    await prisma.user.upsert({
+      where: {
+        email:
+          "user@motoshop.local",
+      },
 
-    update: {},
+      update: {},
 
-    create: {
-      name: "Test User",
-      email: "user@motoshop.local",
-      password,
-      role: "USER",
-    },
-  });
+      create: {
+        name: "Test User",
+        email:
+          "user@motoshop.local",
+        password,
+        role: "USER",
+      },
+    });
 
   const categories = [
     {
@@ -93,15 +126,20 @@ async function main() {
   const categoryMap =
     new Map<string, number>();
 
-  for (const category of categories) {
-    const createdCategory =
+  for (
+    const category
+    of categories
+  ) {
+    const savedCategory =
       await prisma.category.upsert({
         where: {
-          slug: category.slug,
+          slug:
+            category.slug,
         },
 
         update: {
-          name: category.name,
+          name:
+            category.name,
         },
 
         create: category,
@@ -109,245 +147,276 @@ async function main() {
 
     categoryMap.set(
       category.slug,
-      createdCategory.id
+      savedCategory.id
     );
   }
 
-  const products: SeedProduct[] = [
-    {
-      name: 'LED фари "Сова"',
-      slug: "led-fary-sova",
-      description:
-        "Компактні LED фари для мотоцикла з двома режимами світла.",
-      price: 599,
-      oldPrice: 699,
-      stock: 15,
+  const products: SeedProduct[] =
+    [
+      {
+        name: 'LED фари "Сова"',
 
-      images: [
-        "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=900&q=80",
-      ],
+        slug:
+          "led-fary-sova",
 
-      specs: {
-        lightModes: 2,
-        voltage: "12V",
-        color: "white/yellow",
+        description:
+          "Компактні LED фари для мотоцикла з двома режимами світла.",
+
+        price: 599,
+        oldPrice: 699,
+        stock: 15,
+
+        images: [
+          "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=900&q=80",
+        ],
+
+        specs: {
+          lightModes: 2,
+          voltage: "12V",
+          color:
+            "white/yellow",
+        },
+
+        categorySlug:
+          "lighting",
       },
 
-      categorySlug: "lighting",
-    },
+      {
+        name:
+          "Тримач телефону на мотоцикл",
 
-    {
-      name:
-        "Тримач телефону на мотоцикл",
-      slug:
-        "telefonnyi-trymach-moto",
-      description:
-        "Універсальний тримач смартфона на кермо мотоцикла або велосипеда.",
-      price: 330,
-      oldPrice: null,
-      stock: 25,
+        slug:
+          "telefonnyi-trymach-moto",
 
-      images: [
-        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=900&q=80",
-      ],
+        description:
+          "Універсальний тримач смартфона на кермо мотоцикла або велосипеда.",
 
-      specs: {
-        mount: "handlebar",
-        adjustable: true,
+        price: 330,
+        oldPrice: null,
+        stock: 25,
+
+        images: [
+          "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=900&q=80",
+        ],
+
+        specs: {
+          mount:
+            "handlebar",
+          adjustable: true,
+        },
+
+        categorySlug:
+          "holders",
       },
 
-      categorySlug: "holders",
-    },
+      {
+        name:
+          "Lock-On гріпси 22 мм",
 
-    {
-      name:
-        "Lock-On гріпси 22 мм",
-      slug:
-        "lock-on-grips-22mm",
-      description:
-        "Гріпси Lock-On з фіксацією на кермі та рельєфною поверхнею.",
-      price: 449,
-      oldPrice: 499,
-      stock: 18,
+        slug:
+          "lock-on-grips-22mm",
 
-      images: [
-        "https://images.unsplash.com/photo-1558980394-0c3f8b4b5f5e?auto=format&fit=crop&w=900&q=80",
-      ],
+        description:
+          "Гріпси Lock-On з фіксацією на кермі та рельєфною поверхнею.",
 
-      specs: {
-        diameter: "22 mm",
-        type: "Lock-On",
-        material:
-          "rubber + aluminum",
+        price: 449,
+        oldPrice: 499,
+        stock: 18,
+
+        images: [
+          "https://images.unsplash.com/photo-1558980394-0c3f8b4b5f5e?auto=format&fit=crop&w=900&q=80",
+        ],
+
+        specs: {
+          diameter:
+            "22 mm",
+          type:
+            "Lock-On",
+          material:
+            "rubber + aluminum",
+        },
+
+        categorySlug:
+          "grips",
+      },
+    ];
+
+  const templates: ProductTemplate[] =
+    [
+      {
+        category: "helmets",
+        baseName:
+          "Мотошолом Street Pro",
+        description:
+          "Інтегральний мотошолом для міста та траси.",
+        basePrice: 3899,
       },
 
-      categorySlug: "grips",
-    },
-  ];
+      {
+        category: "helmets",
+        baseName:
+          "Мотошолом Touring X",
+        description:
+          "Комфортний мотошолом для тривалих поїздок.",
+        basePrice: 4299,
+      },
 
-  const templates = [
-    {
-      category: "helmets",
-      baseName:
-        "Мотошолом Street Pro",
-      description:
-        "Інтегральний мотошолом для міста та траси.",
-      basePrice: 3899,
-    },
+      {
+        category: "gloves",
+        baseName:
+          "Моторукавиці Air Ride",
+        description:
+          "Легкі моторукавиці з вентиляцією та захистом кісточок.",
+        basePrice: 1299,
+      },
 
-    {
-      category: "helmets",
-      baseName:
-        "Мотошолом Touring X",
-      description:
-        "Комфортний мотошолом для тривалих поїздок.",
-      basePrice: 4299,
-    },
+      {
+        category: "gloves",
+        baseName:
+          "Моторукавиці Road Pro",
+        description:
+          "Шкіряні рукавиці для щоденних і туристичних поїздок.",
+        basePrice: 1799,
+      },
 
-    {
-      category: "gloves",
-      baseName:
-        "Моторукавиці Air Ride",
-      description:
-        "Легкі моторукавиці з вентиляцією та захистом кісточок.",
-      basePrice: 1299,
-    },
+      {
+        category:
+          "protection",
+        baseName:
+          "Захист колін MX Guard",
+        description:
+          "Зручний захист колін для міста та бездоріжжя.",
+        basePrice: 2199,
+      },
 
-    {
-      category: "gloves",
-      baseName:
-        "Моторукавиці Road Pro",
-      description:
-        "Шкіряні рукавиці для щоденних і туристичних поїздок.",
-      basePrice: 1799,
-    },
+      {
+        category:
+          "protection",
+        baseName:
+          "Захист спини Rider Armor",
+        description:
+          "Ергономічний захист спини з вентиляцією.",
+        basePrice: 2799,
+      },
 
-    {
-      category: "protection",
-      baseName:
-        "Захист колін MX Guard",
-      description:
-        "Зручний захист колін для міста та бездоріжжя.",
-      basePrice: 2199,
-    },
+      {
+        category:
+          "lighting",
+        baseName:
+          "LED фара Moto Beam",
+        description:
+          "Додаткова LED-фара для мотоцикла.",
+        basePrice: 1699,
+      },
 
-    {
-      category: "protection",
-      baseName:
-        "Захист спини Rider Armor",
-      description:
-        "Ергономічний захист спини з вентиляцією.",
-      basePrice: 2799,
-    },
+      {
+        category:
+          "lighting",
+        baseName:
+          "LED поворотники Mini Flash",
+        description:
+          "Компактні LED-поворотники для мотоцикла.",
+        basePrice: 899,
+      },
 
-    {
-      category: "lighting",
-      baseName:
-        "LED фара Moto Beam",
-      description:
-        "Додаткова LED-фара для мотоцикла.",
-      basePrice: 1699,
-    },
+      {
+        category: "grips",
+        baseName:
+          "Гріпси Soft Ride",
+        description:
+          "М'які гумові гріпси для комфортної їзди.",
+        basePrice: 399,
+      },
 
-    {
-      category: "lighting",
-      baseName:
-        "LED поворотники Mini Flash",
-      description:
-        "Компактні LED-поворотники для мотоцикла.",
-      basePrice: 899,
-    },
+      {
+        category: "grips",
+        baseName:
+          "Гріпси Sport Grip",
+        description:
+          "Спортивні гріпси з рельєфною поверхнею.",
+        basePrice: 549,
+      },
 
-    {
-      category: "grips",
-      baseName:
-        "Гріпси Soft Ride",
-      description:
-        "М'які гумові гріпси для комфортної їзди.",
-      basePrice: 399,
-    },
+      {
+        category:
+          "holders",
+        baseName:
+          "Тримач телефону X-Grip",
+        description:
+          "Універсальний тримач смартфона для керма.",
+        basePrice: 1099,
+      },
 
-    {
-      category: "grips",
-      baseName:
-        "Гріпси Sport Grip",
-      description:
-        "Спортивні гріпси з рельєфною поверхнею.",
-      basePrice: 549,
-    },
+      {
+        category:
+          "holders",
+        baseName:
+          "Тримач GPS Moto Mount",
+        description:
+          "Надійний тримач GPS або смартфона.",
+        basePrice: 1299,
+      },
 
-    {
-      category: "holders",
-      baseName:
-        "Тримач телефону X-Grip",
-      description:
-        "Універсальний тримач смартфона для керма.",
-      basePrice: 1099,
-    },
+      {
+        category:
+          "mirrors",
+        baseName:
+          "Дзеркала Street Mini",
+        description:
+          "Компактні дзеркала для міських мотоциклів.",
+        basePrice: 1199,
+      },
 
-    {
-      category: "holders",
-      baseName:
-        "Тримач GPS Moto Mount",
-      description:
-        "Надійний тримач GPS або смартфона.",
-      basePrice: 1299,
-    },
+      {
+        category:
+          "mirrors",
+        baseName:
+          "Дзеркала Cafe Racer",
+        description:
+          "Бар-енд дзеркала у стилі Cafe Racer.",
+        basePrice: 1499,
+      },
 
-    {
-      category: "mirrors",
-      baseName:
-        "Дзеркала Street Mini",
-      description:
-        "Компактні дзеркала для міських мотоциклів.",
-      basePrice: 1199,
-    },
+      {
+        category:
+          "oils-care",
+        baseName:
+          "Моторне масло 10W-40",
+        description:
+          "Моторне масло для 4-тактних мотоциклів.",
+        basePrice: 599,
+      },
 
-    {
-      category: "mirrors",
-      baseName:
-        "Дзеркала Cafe Racer",
-      description:
-        "Бар-енд дзеркала у стилі Cafe Racer.",
-      basePrice: 1499,
-    },
+      {
+        category:
+          "oils-care",
+        baseName:
+          "Спрей для ланцюга Chain Care",
+        description:
+          "Мастило для мотоциклетного ланцюга.",
+        basePrice: 449,
+      },
 
-    {
-      category: "oils-care",
-      baseName:
-        "Моторне масло 10W-40",
-      description:
-        "Моторне масло для 4-тактних мотоциклів.",
-      basePrice: 599,
-    },
+      {
+        category:
+          "accessories",
+        baseName:
+          "USB зарядка Moto USB",
+        description:
+          "USB зарядний пристрій для мотоцикла.",
+        basePrice: 699,
+      },
 
-    {
-      category: "oils-care",
-      baseName:
-        "Спрей для ланцюга Chain Care",
-      description:
-        "Мастило для мотоциклетного ланцюга.",
-      basePrice: 449,
-    },
-
-    {
-      category: "accessories",
-      baseName:
-        "USB зарядка Moto USB",
-      description:
-        "USB зарядний пристрій для мотоцикла.",
-      basePrice: 699,
-    },
-
-    {
-      category: "accessories",
-      baseName:
-        "Сумка на бак Moto Bag",
-      description:
-        "Компактна сумка на бак для щоденних поїздок.",
-      basePrice: 1599,
-    },
-  ];
+      {
+        category:
+          "accessories",
+        baseName:
+          "Сумка на бак Moto Bag",
+        description:
+          "Компактна сумка на бак для щоденних поїздок.",
+        basePrice: 1599,
+      },
+    ];
 
   for (
     let series = 1;
@@ -355,42 +424,35 @@ async function main() {
     series++
   ) {
     for (
-      const template of templates
+      const template
+      of templates
     ) {
-      const slugBase =
-        `${template.category}-${template.baseName}`
-          .toLowerCase()
-          .replace(
-            /[^a-z0-9а-яіїєґ]+/gi,
-            "-"
-          )
-          .replace(
-            /^-|-$/g,
-            ""
-          );
+      const name =
+        `${template.baseName} ${series}`;
+
+      const price =
+        template.basePrice +
+        series * 100;
 
       products.push({
-        name:
-          `${template.baseName} ${series}`,
+        name,
 
-        slug:
-          `${slugBase}-${series}`,
+        slug: createSlug(
+          `${template.category}-${name}`
+        ),
 
         description:
           template.description,
 
-        price:
-          template.basePrice +
-          series * 100,
+        price,
 
         oldPrice:
           series % 2 === 0
-            ? template.basePrice +
-              series * 250
+            ? price + 300
             : null,
 
         stock:
-          5 + series * 4,
+          6 + series * 4,
 
         images: [],
 
@@ -406,7 +468,10 @@ async function main() {
     }
   }
 
-  for (const product of products) {
+  for (
+    const product
+    of products
+  ) {
     const categoryId =
       categoryMap.get(
         product.categorySlug
@@ -414,70 +479,69 @@ async function main() {
 
     if (!categoryId) {
       throw new Error(
-        `Category "${product.categorySlug}" not found`
+        `Категорія "${product.categorySlug}" не знайдена`
       );
     }
 
     const {
       categorySlug,
-      ...productData
+      ...data
     } = product;
 
     await prisma.product.upsert({
       where: {
-        slug:
-          productData.slug,
+        slug: data.slug,
       },
 
       update: {
         name:
-          productData.name,
+          data.name,
 
         description:
-          productData.description,
+          data.description,
 
         price:
-          productData.price,
+          data.price,
 
         oldPrice:
-          productData.oldPrice,
+          data.oldPrice,
 
         stock:
-          productData.stock,
+          data.stock,
 
         images:
-          productData.images,
+          data.images,
 
         specs:
-          productData.specs,
+          data.specs,
 
         categoryId,
       },
 
       create: {
         name:
-          productData.name,
+          data.name,
 
         slug:
-          productData.slug,
+          data.slug,
 
         description:
-          productData.description,
+          data.description,
 
         price:
-          productData.price,
+          data.price,
 
         oldPrice:
-          productData.oldPrice,
+          data.oldPrice,
 
         stock:
-          productData.stock,
+          data.stock,
 
         images:
-          productData.images,
+          data.images,
 
         specs:
-          productData.specs,
+          data.specs,
 
         categoryId,
       },
@@ -495,29 +559,12 @@ async function main() {
       userId: user.id,
     },
   });
-
-  console.log(
-    `Seed completed. Products: ${products.length}`
-  );
-
-  console.log(
-    "Admin: admin@motoshop.local / 12345678"
-  );
-
-  console.log(
-    "User: user@motoshop.local / 12345678"
-  );
-
-  console.log(
-    "Admin id:",
-    admin.id
-  );
 }
 
 main()
   .catch((error) => {
     console.error(
-      "SEED ERROR:",
+      "Seed failed:",
       error
     );
 
