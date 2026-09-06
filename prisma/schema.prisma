@@ -35,7 +35,6 @@ model User {
   reviews Review[]
   cart      Cart?
   orders    Order[]
-  reviews   Review[]
   favorites Favorite[]
 }
 
@@ -113,6 +112,7 @@ model Order {
   items        OrderItem[]
 
   createdAt    DateTime    @default(now())
+  archived Boolean @default(false)
   updatedAt    DateTime    @updatedAt
 }
 
@@ -132,7 +132,7 @@ model Review {
   rating    Int
   comment   String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 
   userId    Int
   productId Int

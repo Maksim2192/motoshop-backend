@@ -366,14 +366,25 @@ router.delete(
 // ORDERS
 // =========================
 
-// GET ALL ORDERS
+/* =========================
+   GET ORDERS
+========================= */
 
 router.get(
   "/orders",
-  async (_req, res, next) => {
+  async (req, res, next) => {
     try {
+      const archived =
+        String(
+          req.query.archived ?? "false"
+        ) === "true";
+
       const orders =
         await prisma.order.findMany({
+          where: {
+            archived,
+          },
+
           include: {
             user: {
               select: {
@@ -400,8 +411,9 @@ router.get(
   }
 );
 
-
-// GET ONE ORDER
+/* =========================
+   GET ONE ORDER
+========================= */
 
 router.get(
   "/orders/:id",
@@ -411,11 +423,16 @@ router.get(
         req.params.id
       );
 
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({
-          message:
-            "Invalid order ID",
-        });
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid order ID",
+          });
       }
 
       const order =
@@ -438,10 +455,12 @@ router.get(
         });
 
       if (!order) {
-        return res.status(404).json({
-          message:
-            "Order not found",
-        });
+        return res
+          .status(404)
+          .json({
+            message:
+              "Order not found",
+          });
       }
 
       return res.json({
@@ -453,8 +472,9 @@ router.get(
   }
 );
 
-
-// UPDATE ORDER STATUS
+/* =========================
+   UPDATE ORDER STATUS
+========================= */
 
 router.patch(
   "/orders/:id/status",
@@ -464,11 +484,16 @@ router.patch(
         req.params.id
       );
 
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({
-          message:
-            "Invalid order ID",
-        });
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid order ID",
+          });
       }
 
       const { status } =
@@ -484,10 +509,12 @@ router.patch(
         });
 
       if (!existingOrder) {
-        return res.status(404).json({
-          message:
-            "Order not found",
-        });
+        return res
+          .status(404)
+          .json({
+            message:
+              "Order not found",
+          });
       }
 
       const order =
@@ -514,6 +541,172 @@ router.patch(
         });
 
       return res.json({
+        data: order,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/* =========================
+   ARCHIVE ORDER
+========================= */
+
+router.patch(
+  "/orders/:id/archive",
+  async (req, res, next) => {
+    try {
+      const id = Number(
+        req.params.id
+      );
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid order ID",
+          });
+      }
+
+      const existingOrder =
+        await prisma.order.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!existingOrder) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Order not found",
+          });
+      }
+
+      if (existingOrder.archived) {
+        return res
+          .status(409)
+          .json({
+            message:
+              "Order is already archived",
+          });
+      }
+
+      const order =
+        await prisma.order.update({
+          where: {
+            id,
+          },
+
+          data: {
+            archived: true,
+          },
+
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+
+            items: true,
+          },
+        });
+
+      return res.json({
+        message:
+          "Order archived",
+        data: order,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/* =========================
+   RESTORE ORDER
+========================= */
+
+router.patch(
+  "/orders/:id/restore",
+  async (req, res, next) => {
+    try {
+      const id = Number(
+        req.params.id
+      );
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid order ID",
+          });
+      }
+
+      const existingOrder =
+        await prisma.order.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!existingOrder) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Order not found",
+          });
+      }
+
+      if (!existingOrder.archived) {
+        return res
+          .status(409)
+          .json({
+            message:
+              "Order is not archived",
+          });
+      }
+
+      const order =
+        await prisma.order.update({
+          where: {
+            id,
+          },
+
+          data: {
+            archived: false,
+          },
+
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+
+            items: true,
+          },
+        });
+
+      return res.json({
+        message:
+          "Order restored",
         data: order,
       });
     } catch (error) {
