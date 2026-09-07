@@ -65,20 +65,24 @@ router.get(
         minPrice !== undefined &&
         Number.isNaN(minPrice)
       ) {
-        return res.status(400).json({
-          message:
-            "Некоректна мінімальна ціна",
-        });
+        return res
+          .status(400)
+          .json({
+            message:
+              "Некоректна мінімальна ціна",
+          });
       }
 
       if (
         maxPrice !== undefined &&
         Number.isNaN(maxPrice)
       ) {
-        return res.status(400).json({
-          message:
-            "Некоректна максимальна ціна",
-        });
+        return res
+          .status(400)
+          .json({
+            message:
+              "Некоректна максимальна ціна",
+          });
       }
 
       if (
@@ -86,14 +90,17 @@ router.get(
         maxPrice !== undefined &&
         minPrice > maxPrice
       ) {
-        return res.status(400).json({
-          message:
-            "Мінімальна ціна не може бути більшою за максимальну",
-        });
+        return res
+          .status(400)
+          .json({
+            message:
+              "Мінімальна ціна не може бути більшою за максимальну",
+          });
       }
 
-      const where: Prisma.ProductWhereInput =
-        {};
+      const where: Prisma.ProductWhereInput = {
+        isActive: true,
+      };
 
       /* SEARCH */
 
@@ -238,14 +245,6 @@ router.get(
         }),
       ]);
 
-      /*
-        Prisma не може напряму зробити:
-        oldPrice > price
-
-        Тому якщо включено discount,
-        додатково відфільтровуємо.
-      */
-
       let finalProducts =
         products;
 
@@ -265,7 +264,6 @@ router.get(
         pagination: {
           page,
           limit,
-
           total,
 
           totalPages:
@@ -301,9 +299,10 @@ router.get(
         req.params.slug;
 
       const product =
-        await prisma.product.findUnique({
+        await prisma.product.findFirst({
           where: {
             slug,
+            isActive: true,
           },
 
           include: {
@@ -354,9 +353,10 @@ router.get(
       }
 
       const product =
-        await prisma.product.findUnique({
+        await prisma.product.findFirst({
           where: {
             id,
+            isActive: true,
           },
 
           include: {

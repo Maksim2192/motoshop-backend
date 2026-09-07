@@ -69,15 +69,16 @@ const bulkDeleteProductsSchema =
   });
 
 
-const orderStatusSchema = z.object({
-  status: z.enum([
-    "PENDING",
-    "CONFIRMED",
-    "SHIPPED",
-    "DELIVERED",
-    "CANCELLED",
-  ]),
-});
+const orderStatusSchema =
+  z.object({
+    status: z.enum([
+      "PENDING",
+      "CONFIRMED",
+      "SHIPPED",
+      "DELIVERED",
+      "CANCELLED",
+    ]),
+  });
 
 
 // ======================================================
@@ -111,7 +112,11 @@ router.get(
         orders,
         revenue,
       ] = await Promise.all([
-        prisma.product.count(),
+        prisma.product.count({
+          where: {
+            isActive: true,
+          },
+        }),
 
         prisma.user.count(),
 
@@ -183,7 +188,11 @@ router.post(
 
       const product =
         await prisma.product.create({
-          data,
+          data: {
+            ...data,
+
+            isActive: true,
+          },
         });
 
       return res
@@ -288,7 +297,7 @@ router.patch(
 
 
 // ======================================================
-// BULK DELETE PRODUCTS
+// BULK DELETE PRODUCTS — SOFT DELETE
 // ======================================================
 
 router.delete(
@@ -310,6 +319,8 @@ router.delete(
             id: {
               in: uniqueIds,
             },
+
+            isActive: true,
           },
 
           select: {
@@ -325,92 +336,60 @@ router.delete(
           .status(404)
           .json({
             message:
-              "Жодного товару не знайдено",
+              "Активні товари не знайдено",
           });
       }
 
-      // Товари, які вже використовуються
-      // в історії замовлень
-      const orderItems =
-        await prisma.orderItem.findMany({
+      const foundIds =
+        products.map(
+          (product) =>
+            product.id
+        );
+
+      const result =
+        await prisma.product.updateMany({
           where: {
-            productId: {
-              in: uniqueIds,
+            id: {
+              in: foundIds,
             },
+
+            isActive: true,
           },
 
-          select: {
-            productId: true,
+          data: {
+            isActive: false,
           },
         });
 
-      const protectedIds = [
-        ...new Set(
-          orderItems.map(
-            (item) =>
-              item.productId
-          )
-        ),
-      ];
+      // Прибираємо приховані товари
+      // з кошиків користувачів
+      await prisma.cartItem.deleteMany({
+        where: {
+          productId: {
+            in: foundIds,
+          },
+        },
+      });
 
-      // Видаляємо тільки товари,
-      // яких немає в OrderItem
-      const deletableIds =
-        products
-          .map(
-            (product) =>
-              product.id
-          )
-          .filter(
-            (id) =>
-              !protectedIds.includes(
-                id
-              )
-          );
-
-      let deletedCount = 0;
-
-      if (
-        deletableIds.length > 0
-      ) {
-        const deleteResult =
-          await prisma.product.deleteMany({
-            where: {
-              id: {
-                in: deletableIds,
-              },
-            },
-          });
-
-        deletedCount =
-          deleteResult.count;
-      }
-
-      const skippedProducts =
-        products.filter(
-          (product) =>
-            protectedIds.includes(
-              product.id
-            )
-        );
+      // Прибираємо їх з обраного.
+      // OrderItem НЕ чіпаємо.
+      await prisma.favorite.deleteMany({
+        where: {
+          productId: {
+            in: foundIds,
+          },
+        },
+      });
 
       return res.json({
         message:
-          skippedProducts.length > 0
-            ? deletedCount > 0
-              ? "Частину товарів видалено. Товари з історією замовлень залишено."
-              : "Вибрані товари неможливо видалити, тому що вони є в історії замовлень."
-            : "Товари успішно видалено",
+          "Вибрані товари успішно видалено",
 
-        deletedCount,
+        deletedCount:
+          result.count,
 
         deletedIds:
-          deletableIds,
-
-        skippedCount:
-          skippedProducts.length,
-
-        skippedProducts,
+          foundIds,
       });
     } catch (error) {
       next(error);
@@ -420,7 +399,7 @@ router.delete(
 
 
 // ======================================================
-// DELETE ONE PRODUCT
+// DELETE ONE PRODUCT — SOFT DELETE
 // ======================================================
 
 router.delete(
@@ -448,11 +427,6 @@ router.delete(
           where: {
             id,
           },
-
-          select: {
-            id: true,
-            name: true,
-          },
         });
 
       if (!product) {
@@ -464,44 +438,49 @@ router.delete(
           });
       }
 
-      const orderItemsCount =
-        await prisma.orderItem.count({
-          where: {
-            productId: id,
-          },
-        });
-
-      if (
-        orderItemsCount > 0
-      ) {
+      if (!product.isActive) {
         return res
-          .status(409)
+          .status(404)
           .json({
             message:
-              "Цей товар неможливо видалити, тому що він вже є в історії замовлень.",
-
-            product: {
-              id:
-                product.id,
-
-              name:
-                product.name,
-            },
+              "Товар уже видалено",
           });
       }
 
-      await prisma.product.delete({
+      const deletedProduct =
+        await prisma.product.update({
+          where: {
+            id,
+          },
+
+          data: {
+            isActive: false,
+          },
+        });
+
+      // Прибираємо товар з кошиків
+      await prisma.cartItem.deleteMany({
         where: {
-          id,
+          productId: id,
         },
       });
+
+      // Прибираємо товар з обраного
+      await prisma.favorite.deleteMany({
+        where: {
+          productId: id,
+        },
+      });
+
+      // OrderItem спеціально
+      // НЕ видаляємо
 
       return res.json({
         message:
           "Товар успішно видалено",
 
         deletedId:
-          id,
+          deletedProduct.id,
       });
     } catch (error) {
       next(error);
