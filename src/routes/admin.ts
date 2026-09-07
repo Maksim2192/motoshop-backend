@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { auth } from "../middleware/auth";
 import { resend } from "../lib/resend";
@@ -9,9 +10,9 @@ const router = Router();
 router.use(auth("ADMIN"));
 
 
-// =========================
+// ======================================================
 // SCHEMAS
-// =========================
+// ======================================================
 
 const productSchema = z.object({
   name: z.string().min(2),
@@ -29,8 +30,8 @@ const productSchema = z.object({
     .number()
     .int()
     .positive()
-    .optional()
-    .nullable(),
+    .nullable()
+    .optional(),
 
   stock: z
     .number()
@@ -52,17 +53,6 @@ const productSchema = z.object({
 });
 
 
-const orderStatusSchema = z.object({
-  status: z.enum([
-    "PENDING",
-    "CONFIRMED",
-    "SHIPPED",
-    "DELIVERED",
-    "CANCELLED",
-  ]),
-});
-
-
 const bulkDeleteProductsSchema =
   z.object({
     ids: z
@@ -79,6 +69,21 @@ const bulkDeleteProductsSchema =
   });
 
 
+const orderStatusSchema = z.object({
+  status: z.enum([
+    "PENDING",
+    "CONFIRMED",
+    "SHIPPED",
+    "DELIVERED",
+    "CANCELLED",
+  ]),
+});
+
+
+// ======================================================
+// HELPERS
+// ======================================================
+
 function escapeHtml(
   value: string
 ) {
@@ -92,9 +97,9 @@ function escapeHtml(
 }
 
 
-// =========================
+// ======================================================
 // STATS
-// =========================
+// ======================================================
 
 router.get(
   "/stats",
@@ -142,14 +147,14 @@ router.get(
 );
 
 
-// =========================
+// ======================================================
 // PRODUCTS
-// =========================
+// ======================================================
 
 
-// =========================
+// ======================================================
 // CREATE PRODUCT
-// =========================
+// ======================================================
 
 router.post(
   "/products",
@@ -160,14 +165,32 @@ router.post(
           req.body
         );
 
+      const existingSlug =
+        await prisma.product.findUnique({
+          where: {
+            slug: data.slug,
+          },
+        });
+
+      if (existingSlug) {
+        return res
+          .status(409)
+          .json({
+            message:
+              "Товар з таким slug вже існує",
+          });
+      }
+
       const product =
         await prisma.product.create({
           data,
         });
 
-      return res.status(201).json({
-        data: product,
-      });
+      return res
+        .status(201)
+        .json({
+          data: product,
+        });
     } catch (error) {
       next(error);
     }
@@ -175,9 +198,9 @@ router.post(
 );
 
 
-// =========================
+// ======================================================
 // UPDATE PRODUCT
-// =========================
+// ======================================================
 
 router.patch(
   "/products/:id",
@@ -220,6 +243,31 @@ router.patch(
           });
       }
 
+      if (
+        data.slug &&
+        data.slug !==
+          existingProduct.slug
+      ) {
+        const duplicateSlug =
+          await prisma.product.findUnique({
+            where: {
+              slug: data.slug,
+            },
+          });
+
+        if (
+          duplicateSlug &&
+          duplicateSlug.id !== id
+        ) {
+          return res
+            .status(409)
+            .json({
+              message:
+                "Товар з таким slug вже існує",
+            });
+        }
+      }
+
       const product =
         await prisma.product.update({
           where: {
@@ -239,9 +287,9 @@ router.patch(
 );
 
 
-// =========================
+// ======================================================
 // BULK DELETE PRODUCTS
-// =========================
+// ======================================================
 
 router.delete(
   "/products/bulk",
@@ -252,7 +300,6 @@ router.delete(
           req.body
         );
 
-      // прибираємо дублікати
       const uniqueIds = [
         ...new Set(ids),
       ];
@@ -271,7 +318,9 @@ router.delete(
           },
         });
 
-      if (products.length === 0) {
+      if (
+        products.length === 0
+      ) {
         return res
           .status(404)
           .json({
@@ -280,30 +329,88 @@ router.delete(
           });
       }
 
-      const foundIds =
-        products.map(
-          (product) =>
-            product.id
-        );
-
-      const result =
-        await prisma.product.deleteMany({
+      // Товари, які вже використовуються
+      // в історії замовлень
+      const orderItems =
+        await prisma.orderItem.findMany({
           where: {
-            id: {
-              in: foundIds,
+            productId: {
+              in: uniqueIds,
             },
+          },
+
+          select: {
+            productId: true,
           },
         });
 
+      const protectedIds = [
+        ...new Set(
+          orderItems.map(
+            (item) =>
+              item.productId
+          )
+        ),
+      ];
+
+      // Видаляємо тільки товари,
+      // яких немає в OrderItem
+      const deletableIds =
+        products
+          .map(
+            (product) =>
+              product.id
+          )
+          .filter(
+            (id) =>
+              !protectedIds.includes(
+                id
+              )
+          );
+
+      let deletedCount = 0;
+
+      if (
+        deletableIds.length > 0
+      ) {
+        const deleteResult =
+          await prisma.product.deleteMany({
+            where: {
+              id: {
+                in: deletableIds,
+              },
+            },
+          });
+
+        deletedCount =
+          deleteResult.count;
+      }
+
+      const skippedProducts =
+        products.filter(
+          (product) =>
+            protectedIds.includes(
+              product.id
+            )
+        );
+
       return res.json({
         message:
-          "Товари успішно видалено",
+          skippedProducts.length > 0
+            ? deletedCount > 0
+              ? "Частину товарів видалено. Товари з історією замовлень залишено."
+              : "Вибрані товари неможливо видалити, тому що вони є в історії замовлень."
+            : "Товари успішно видалено",
 
-        deletedCount:
-          result.count,
+        deletedCount,
 
         deletedIds:
-          foundIds,
+          deletableIds,
+
+        skippedCount:
+          skippedProducts.length,
+
+        skippedProducts,
       });
     } catch (error) {
       next(error);
@@ -312,9 +419,9 @@ router.delete(
 );
 
 
-// =========================
+// ======================================================
 // DELETE ONE PRODUCT
-// =========================
+// ======================================================
 
 router.delete(
   "/products/:id",
@@ -341,6 +448,11 @@ router.delete(
           where: {
             id,
           },
+
+          select: {
+            id: true,
+            name: true,
+          },
         });
 
       if (!product) {
@@ -352,6 +464,32 @@ router.delete(
           });
       }
 
+      const orderItemsCount =
+        await prisma.orderItem.count({
+          where: {
+            productId: id,
+          },
+        });
+
+      if (
+        orderItemsCount > 0
+      ) {
+        return res
+          .status(409)
+          .json({
+            message:
+              "Цей товар неможливо видалити, тому що він вже є в історії замовлень.",
+
+            product: {
+              id:
+                product.id,
+
+              name:
+                product.name,
+            },
+          });
+      }
+
       await prisma.product.delete({
         where: {
           id,
@@ -360,7 +498,10 @@ router.delete(
 
       return res.json({
         message:
-          "Product deleted",
+          "Товар успішно видалено",
+
+        deletedId:
+          id,
       });
     } catch (error) {
       next(error);
@@ -369,14 +510,14 @@ router.delete(
 );
 
 
-// =========================
+// ======================================================
 // ORDERS
-// =========================
+// ======================================================
 
 
-// =========================
+// ======================================================
 // GET ORDERS
-// =========================
+// ======================================================
 
 router.get(
   "/orders",
@@ -421,9 +562,9 @@ router.get(
 );
 
 
-// =========================
+// ======================================================
 // GET ONE ORDER
-// =========================
+// ======================================================
 
 router.get(
   "/orders/:id",
@@ -483,9 +624,9 @@ router.get(
 );
 
 
-// =========================
+// ======================================================
 // UPDATE ORDER STATUS
-// =========================
+// ======================================================
 
 router.patch(
   "/orders/:id/status",
@@ -561,9 +702,9 @@ router.patch(
 );
 
 
-// =========================
+// ======================================================
 // ARCHIVE ORDER
-// =========================
+// ======================================================
 
 router.patch(
   "/orders/:id/archive",
@@ -648,9 +789,9 @@ router.patch(
 );
 
 
-// =========================
+// ======================================================
 // RESTORE ORDER
-// =========================
+// ======================================================
 
 router.patch(
   "/orders/:id/restore",
@@ -735,25 +876,28 @@ router.patch(
 );
 
 
-// =========================
+// ======================================================
 // CONTACTS
-// =========================
+// ======================================================
 
 
-// =========================
+// ======================================================
 // GET CONTACTS
-// =========================
+// ======================================================
 
 router.get(
   "/contacts",
   async (_req, res, next) => {
     try {
       const messages =
-        await prisma.contactMessage.findMany({
-          orderBy: {
-            createdAt: "desc",
-          },
-        });
+        await prisma
+          .contactMessage
+          .findMany({
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+          });
 
       return res.json({
         data: messages,
@@ -765,9 +909,9 @@ router.get(
 );
 
 
-// =========================
+// ======================================================
 // REPLY CONTACT
-// =========================
+// ======================================================
 
 router.post(
   "/contacts/:id/reply",
@@ -800,14 +944,18 @@ router.post(
             )
             .max(5000),
         })
-        .parse(req.body);
+        .parse(
+          req.body
+        );
 
       const contactMessage =
-        await prisma.contactMessage.findUnique({
-          where: {
-            id,
-          },
-        });
+        await prisma
+          .contactMessage
+          .findUnique({
+            where: {
+              id,
+            },
+          });
 
       if (!contactMessage) {
         return res
@@ -818,7 +966,10 @@ router.post(
           });
       }
 
-      const { data, error } =
+      const {
+        data,
+        error,
+      } =
         await resend.emails.send({
           from:
             process.env
@@ -907,24 +1058,30 @@ router.post(
       }
 
       const updated =
-        await prisma.contactMessage.update({
-          where: {
-            id,
-          },
+        await prisma
+          .contactMessage
+          .update({
+            where: {
+              id,
+            },
 
-          data: {
-            reply,
-            repliedAt:
-              new Date(),
-            isRead: true,
-          },
-        });
+            data: {
+              reply,
+
+              repliedAt:
+                new Date(),
+
+              isRead:
+                true,
+            },
+          });
 
       return res.json({
         message:
           "Відповідь успішно відправлено",
 
-        data: updated,
+        data:
+          updated,
 
         emailId:
           data?.id,
@@ -936,9 +1093,9 @@ router.post(
 );
 
 
-// =========================
+// ======================================================
 // MARK CONTACT AS READ
-// =========================
+// ======================================================
 
 router.patch(
   "/contacts/:id/read",
@@ -960,19 +1117,41 @@ router.patch(
           });
       }
 
-      const message =
-        await prisma.contactMessage.update({
-          where: {
-            id,
-          },
+      const existingMessage =
+        await prisma
+          .contactMessage
+          .findUnique({
+            where: {
+              id,
+            },
+          });
 
-          data: {
-            isRead: true,
-          },
-        });
+      if (!existingMessage) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Повідомлення не знайдено",
+          });
+      }
+
+      const message =
+        await prisma
+          .contactMessage
+          .update({
+            where: {
+              id,
+            },
+
+            data: {
+              isRead:
+                true,
+            },
+          });
 
       return res.json({
-        data: message,
+        data:
+          message,
       });
     } catch (error) {
       next(error);
@@ -981,9 +1160,9 @@ router.patch(
 );
 
 
-// =========================
+// ======================================================
 // DELETE CONTACT
-// =========================
+// ======================================================
 
 router.delete(
   "/contacts/:id",
@@ -1005,11 +1184,31 @@ router.delete(
           });
       }
 
-      await prisma.contactMessage.delete({
-        where: {
-          id,
-        },
-      });
+      const existingMessage =
+        await prisma
+          .contactMessage
+          .findUnique({
+            where: {
+              id,
+            },
+          });
+
+      if (!existingMessage) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Повідомлення не знайдено",
+          });
+      }
+
+      await prisma
+        .contactMessage
+        .delete({
+          where: {
+            id,
+          },
+        });
 
       return res.json({
         message:
