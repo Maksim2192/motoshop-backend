@@ -62,7 +62,26 @@ const orderStatusSchema = z.object({
   ]),
 });
 
-function escapeHtml(value: string) {
+
+const bulkDeleteProductsSchema =
+  z.object({
+    ids: z
+      .array(
+        z
+          .number()
+          .int()
+          .positive()
+      )
+      .min(
+        1,
+        "Потрібно вибрати хоча б один товар"
+      ),
+  });
+
+
+function escapeHtml(
+  value: string
+) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -71,6 +90,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;")
     .replace(/\n/g, "<br />");
 }
+
 
 // =========================
 // STATS
@@ -126,7 +146,10 @@ router.get(
 // PRODUCTS
 // =========================
 
+
+// =========================
 // CREATE PRODUCT
+// =========================
 
 router.post(
   "/products",
@@ -152,7 +175,9 @@ router.post(
 );
 
 
+// =========================
 // UPDATE PRODUCT
+// =========================
 
 router.patch(
   "/products/:id",
@@ -162,17 +187,38 @@ router.patch(
         req.params.id
       );
 
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({
-          message:
-            "Invalid product ID",
-        });
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid product ID",
+          });
       }
 
       const data =
         productSchema
           .partial()
           .parse(req.body);
+
+      const existingProduct =
+        await prisma.product.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!existingProduct) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Товар не знайдено",
+          });
+      }
 
       const product =
         await prisma.product.update({
@@ -193,133 +239,71 @@ router.patch(
 );
 
 
+// =========================
+// BULK DELETE PRODUCTS
+// =========================
 
-router.post(
-  "/contacts/:id/reply",
+router.delete(
+  "/products/bulk",
   async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
+      const { ids } =
+        bulkDeleteProductsSchema.parse(
+          req.body
+        );
 
-      if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-          message: "Invalid message ID",
-        });
-      }
+      // прибираємо дублікати
+      const uniqueIds = [
+        ...new Set(ids),
+      ];
 
-      const { reply } = z
-        .object({
-          reply: z
-            .string()
-            .trim()
-            .min(2, "Відповідь занадто коротка")
-            .max(5000),
-        })
-        .parse(req.body);
-
-      const contactMessage =
-        await prisma.contactMessage.findUnique({
+      const products =
+        await prisma.product.findMany({
           where: {
-            id,
+            id: {
+              in: uniqueIds,
+            },
+          },
+
+          select: {
+            id: true,
+            name: true,
           },
         });
 
-      if (!contactMessage) {
-        return res.status(404).json({
-          message: "Повідомлення не знайдено",
-        });
+      if (products.length === 0) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Жодного товару не знайдено",
+          });
       }
 
-      const { data, error } =
-        await resend.emails.send({
-          from:
-            process.env.RESEND_FROM_EMAIL ||
-            "MotoShop <onboarding@resend.dev>",
+      const foundIds =
+        products.map(
+          (product) =>
+            product.id
+        );
 
-          to: [contactMessage.email],
-
-          subject: "Відповідь від MotoShop",
-
-          html: `
-            <div
-              style="
-                max-width:600px;
-                margin:0 auto;
-                font-family:Arial,sans-serif;
-                color:#171717;
-              "
-            >
-              <h2>
-                Вітаємо, ${escapeHtml(contactMessage.name)}!
-              </h2>
-
-              <p>
-                Ви зверталися до MotoShop із повідомленням:
-              </p>
-
-              <div
-                style="
-                  padding:16px;
-                  margin:20px 0;
-                  background:#f5f5f5;
-                  border-radius:10px;
-                "
-              >
-                ${escapeHtml(contactMessage.message)}
-              </div>
-
-              <p>
-                <strong>
-                  Наша відповідь:
-                </strong>
-              </p>
-
-              <div
-                style="
-                  padding:16px;
-                  margin:20px 0;
-                  background:#111;
-                  color:#fff;
-                  border-radius:10px;
-                "
-              >
-                ${escapeHtml(reply)}
-              </div>
-
-              <p>
-                Дякуємо, що звернулися до MotoShop.
-              </p>
-            </div>
-          `,
-        });
-
-      if (error) {
-        console.error("RESEND ERROR:", error);
-
-        return res.status(502).json({
-          message:
-            error.message ||
-            "Не вдалося відправити email",
-        });
-      }
-
-      const updated =
-        await prisma.contactMessage.update({
+      const result =
+        await prisma.product.deleteMany({
           where: {
-            id,
-          },
-
-          data: {
-            reply,
-            repliedAt: new Date(),
-            isRead: true,
+            id: {
+              in: foundIds,
+            },
           },
         });
 
       return res.json({
         message:
-          "Відповідь успішно відправлено",
-        data: updated,
-        emailId: data?.id,
+          "Товари успішно видалено",
+
+        deletedCount:
+          result.count,
+
+        deletedIds:
+          foundIds,
       });
     } catch (error) {
       next(error);
@@ -328,7 +312,9 @@ router.post(
 );
 
 
-// DELETE PRODUCT
+// =========================
+// DELETE ONE PRODUCT
+// =========================
 
 router.delete(
   "/products/:id",
@@ -338,11 +324,32 @@ router.delete(
         req.params.id
       );
 
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({
-          message:
-            "Invalid product ID",
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid product ID",
+          });
+      }
+
+      const product =
+        await prisma.product.findUnique({
+          where: {
+            id,
+          },
         });
+
+      if (!product) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Товар не знайдено",
+          });
       }
 
       await prisma.product.delete({
@@ -366,9 +373,10 @@ router.delete(
 // ORDERS
 // =========================
 
-/* =========================
-   GET ORDERS
-========================= */
+
+// =========================
+// GET ORDERS
+// =========================
 
 router.get(
   "/orders",
@@ -376,7 +384,8 @@ router.get(
     try {
       const archived =
         String(
-          req.query.archived ?? "false"
+          req.query.archived ??
+            "false"
         ) === "true";
 
       const orders =
@@ -411,9 +420,10 @@ router.get(
   }
 );
 
-/* =========================
-   GET ONE ORDER
-========================= */
+
+// =========================
+// GET ONE ORDER
+// =========================
 
 router.get(
   "/orders/:id",
@@ -472,9 +482,10 @@ router.get(
   }
 );
 
-/* =========================
-   UPDATE ORDER STATUS
-========================= */
+
+// =========================
+// UPDATE ORDER STATUS
+// =========================
 
 router.patch(
   "/orders/:id/status",
@@ -549,9 +560,10 @@ router.patch(
   }
 );
 
-/* =========================
-   ARCHIVE ORDER
-========================= */
+
+// =========================
+// ARCHIVE ORDER
+// =========================
 
 router.patch(
   "/orders/:id/archive",
@@ -589,7 +601,9 @@ router.patch(
           });
       }
 
-      if (existingOrder.archived) {
+      if (
+        existingOrder.archived
+      ) {
         return res
           .status(409)
           .json({
@@ -624,6 +638,7 @@ router.patch(
       return res.json({
         message:
           "Order archived",
+
         data: order,
       });
     } catch (error) {
@@ -632,9 +647,10 @@ router.patch(
   }
 );
 
-/* =========================
-   RESTORE ORDER
-========================= */
+
+// =========================
+// RESTORE ORDER
+// =========================
 
 router.patch(
   "/orders/:id/restore",
@@ -672,7 +688,9 @@ router.patch(
           });
       }
 
-      if (!existingOrder.archived) {
+      if (
+        !existingOrder.archived
+      ) {
         return res
           .status(409)
           .json({
@@ -707,6 +725,7 @@ router.patch(
       return res.json({
         message:
           "Order restored",
+
         data: order,
       });
     } catch (error) {
@@ -715,32 +734,230 @@ router.patch(
   }
 );
 
-router.get("/contacts", async (_req, res, next) => {
-  try {
-    const messages = await prisma.contactMessage.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
 
-    return res.json({
-      data: messages,
-    });
-  } catch (error) {
-    next(error);
+// =========================
+// CONTACTS
+// =========================
+
+
+// =========================
+// GET CONTACTS
+// =========================
+
+router.get(
+  "/contacts",
+  async (_req, res, next) => {
+    try {
+      const messages =
+        await prisma.contactMessage.findMany({
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+
+      return res.json({
+        data: messages,
+      });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
+
+
+// =========================
+// REPLY CONTACT
+// =========================
+
+router.post(
+  "/contacts/:id/reply",
+  async (req, res, next) => {
+    try {
+      const id = Number(
+        req.params.id
+      );
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid message ID",
+          });
+      }
+
+      const { reply } = z
+        .object({
+          reply: z
+            .string()
+            .trim()
+            .min(
+              2,
+              "Відповідь занадто коротка"
+            )
+            .max(5000),
+        })
+        .parse(req.body);
+
+      const contactMessage =
+        await prisma.contactMessage.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!contactMessage) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Повідомлення не знайдено",
+          });
+      }
+
+      const { data, error } =
+        await resend.emails.send({
+          from:
+            process.env
+              .RESEND_FROM_EMAIL ||
+            "MotoShop <onboarding@resend.dev>",
+
+          to: [
+            contactMessage.email,
+          ],
+
+          subject:
+            "Відповідь від MotoShop",
+
+          html: `
+            <div
+              style="
+                max-width:600px;
+                margin:0 auto;
+                font-family:Arial,sans-serif;
+                color:#171717;
+              "
+            >
+              <h2>
+                Вітаємо, ${escapeHtml(
+                  contactMessage.name
+                )}!
+              </h2>
+
+              <p>
+                Ви зверталися до MotoShop із повідомленням:
+              </p>
+
+              <div
+                style="
+                  padding:16px;
+                  margin:20px 0;
+                  background:#f5f5f5;
+                  border-radius:10px;
+                "
+              >
+                ${escapeHtml(
+                  contactMessage.message
+                )}
+              </div>
+
+              <p>
+                <strong>
+                  Наша відповідь:
+                </strong>
+              </p>
+
+              <div
+                style="
+                  padding:16px;
+                  margin:20px 0;
+                  background:#111;
+                  color:#fff;
+                  border-radius:10px;
+                "
+              >
+                ${escapeHtml(
+                  reply
+                )}
+              </div>
+
+              <p>
+                Дякуємо, що звернулися до MotoShop.
+              </p>
+            </div>
+          `,
+        });
+
+      if (error) {
+        console.error(
+          "RESEND ERROR:",
+          error
+        );
+
+        return res
+          .status(502)
+          .json({
+            message:
+              error.message ||
+              "Не вдалося відправити email",
+          });
+      }
+
+      const updated =
+        await prisma.contactMessage.update({
+          where: {
+            id,
+          },
+
+          data: {
+            reply,
+            repliedAt:
+              new Date(),
+            isRead: true,
+          },
+        });
+
+      return res.json({
+        message:
+          "Відповідь успішно відправлено",
+
+        data: updated,
+
+        emailId:
+          data?.id,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+
+// =========================
+// MARK CONTACT AS READ
+// =========================
 
 router.patch(
   "/contacts/:id/read",
   async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
+      const id = Number(
+        req.params.id
+      );
 
-      if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-          message: "Invalid message ID",
-        });
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid message ID",
+          });
       }
 
       const message =
@@ -763,16 +980,29 @@ router.patch(
   }
 );
 
+
+// =========================
+// DELETE CONTACT
+// =========================
+
 router.delete(
   "/contacts/:id",
   async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
+      const id = Number(
+        req.params.id
+      );
 
-      if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-          message: "Invalid message ID",
-        });
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "Invalid message ID",
+          });
       }
 
       await prisma.contactMessage.delete({
@@ -782,7 +1012,8 @@ router.delete(
       });
 
       return res.json({
-        message: "Message deleted",
+        message:
+          "Message deleted",
       });
     } catch (error) {
       next(error);
