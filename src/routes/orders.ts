@@ -2,7 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma";
-import { auth } from "../middleware/auth";
+import {
+  auth,
+  optionalAuth,
+} from "../middleware/auth";
 import { AuthRequest } from "../types/auth";
 
 const router = Router();
@@ -10,180 +13,334 @@ const router = Router();
 router.get("/test", (_req, res) => {
   return res.json({
     message: "NEW ORDERS ROUTE WORKS",
-    version: "v4",
+    version: "v5",
   });
 });
 
+/* =========================
+   VALIDATION
+========================= */
+
 const orderSchema = z.object({
   customer: z.object({
-    name: z.string().trim().min(2),
-    email: z.email(),
-    phone: z.string().trim().min(8),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Ім'я має містити мінімум 2 символи"),
+
+    email: z.email("Некоректний email"),
+
+    phone: z
+      .string()
+      .trim()
+      .min(8, "Некоректний номер телефону"),
   }),
 
   delivery: z.object({
-    type: z.string().min(1),
-    city: z.string().trim().min(2),
-    department: z.string().trim().optional(),
+    type: z
+      .string()
+      .trim()
+      .min(1, "Оберіть спосіб доставки"),
+
+    city: z
+      .string()
+      .trim()
+      .min(2, "Вкажіть місто"),
+
+    department: z
+      .string()
+      .trim()
+      .optional(),
   }),
 
-  payment: z.string().min(1),
+  payment: z
+    .string()
+    .trim()
+    .min(1, "Оберіть спосіб оплати"),
 
-  comment: z.string().optional(),
+  comment: z
+    .string()
+    .trim()
+    .max(
+      1000,
+      "Коментар не може містити більше 1000 символів"
+    )
+    .optional(),
 
   items: z
     .array(
       z.object({
-        productId: z.number().int().positive(),
-        quantity: z.number().int().positive(),
+        productId:
+          z.number().int().positive(),
+
+        quantity:
+          z.number().int().positive(),
       })
     )
-    .min(1),
+    .min(
+      1,
+      "Замовлення повинно містити хоча б один товар"
+    ),
 });
 
 /* =========================
    CREATE ORDER
 ========================= */
 
-router.post("/", async (req, res, next) => {
-  try {
-    const data = orderSchema.parse(req.body);
+router.post(
+  "/",
+  optionalAuth(),
+  async (
+    req: AuthRequest,
+    res,
+    next
+  ) => {
+    try {
+      const data =
+        orderSchema.parse(req.body);
 
-    const productIds = [
-      ...new Set(
-        data.items.map((item) => item.productId)
-      ),
-    ];
+      const quantityMap =
+        new Map<number, number>();
 
-    const products = await prisma.product.findMany({
-      where: {
-        id: {
-          in: productIds,
-        },
-      },
-    });
+      for (const item of data.items) {
+        const current =
+          quantityMap.get(
+            item.productId
+          ) ?? 0;
 
-    if (products.length !== productIds.length) {
-      return res.status(400).json({
-        message:
-          "Один або декілька товарів не знайдено",
-      });
-    }
+        quantityMap.set(
+          item.productId,
+          current + item.quantity
+        );
+      }
 
-    let total = 0;
+      const items =
+        Array.from(
+          quantityMap.entries()
+        ).map(
+          ([productId, quantity]) => ({
+            productId,
+            quantity,
+          })
+        );
 
-    for (const item of data.items) {
-      const product = products.find(
-        (product) =>
-          product.id === item.productId
-      );
+      const productIds =
+        items.map(
+          (item) => item.productId
+        );
 
-      if (!product) {
+      /* =========================
+         LOAD PRODUCTS
+      ========================= */
+
+      const products =
+        await prisma.product.findMany({
+          where: {
+            id: {
+              in: productIds,
+            },
+
+            isActive: true,
+          },
+        });
+
+      if (
+        products.length !==
+        productIds.length
+      ) {
         return res.status(400).json({
-          message: `Товар з ID ${item.productId} не знайдено`,
+          message:
+            "Один або декілька товарів не знайдено або вони недоступні",
         });
       }
 
-      if (item.quantity > product.stock) {
-        return res.status(400).json({
-          message: `Недостатньо товару "${product.name}" на складі`,
-        });
-      }
+      /* =========================
+         CALCULATE TOTAL
+      ========================= */
 
-      total +=
-        product.price * item.quantity;
-    }
+      let total = 0;
 
-    const order = await prisma.$transaction(
-      async (tx) => {
-        const createdOrder =
-          await tx.order.create({
-            data: {
-              total,
+      for (const item of items) {
+        const product =
+          products.find(
+            (product) =>
+              product.id ===
+              item.productId
+          );
 
-              customerName:
-                data.customer.name,
-
-              email:
-                data.customer.email,
-
-              phone:
-                data.customer.phone,
-
-              city:
-                data.delivery.city,
-
-              department:
-                data.delivery.department ?? null,
-
-              deliveryType:
-                data.delivery.type,
-
-              payment:
-                data.payment,
-
-              comment:
-                data.comment ?? null,
-
-              items: {
-                create: data.items.map(
-                  (item) => {
-                    const product =
-                      products.find(
-                        (product) =>
-                          product.id ===
-                          item.productId
-                      )!;
-
-                    return {
-                      productId:
-                        product.id,
-
-                      name:
-                        product.name,
-
-                      price:
-                        product.price,
-
-                      quantity:
-                        item.quantity,
-                    };
-                  }
-                ),
-              },
-            },
-
-            include: {
-              items: true,
-            },
-          });
-
-        for (const item of data.items) {
-          await tx.product.update({
-            where: {
-              id: item.productId,
-            },
-
-            data: {
-              stock: {
-                decrement:
-                  item.quantity,
-              },
-            },
+        if (!product) {
+          return res.status(400).json({
+            message:
+              `Товар з ID ${item.productId} не знайдено`,
           });
         }
 
-        return createdOrder;
-      }
-    );
+        if (
+          item.quantity >
+          product.stock
+        ) {
+          return res.status(400).json({
+            message:
+              `Недостатньо товару "${product.name}" на складі`,
+          });
+        }
 
-    return res.status(201).json({
-      data: order,
-    });
-  } catch (error) {
-    next(error);
+        total +=
+          product.price *
+          item.quantity;
+      }
+
+      /* =========================
+         TRANSACTION
+      ========================= */
+
+      const order =
+        await prisma.$transaction(
+          async (tx) => {
+            for (const item of items) {
+              const result =
+                await tx.product.updateMany({
+                  where: {
+                    id:
+                      item.productId,
+
+                    isActive: true,
+
+                    stock: {
+                      gte:
+                        item.quantity,
+                    },
+                  },
+
+                  data: {
+                    stock: {
+                      decrement:
+                        item.quantity,
+                    },
+                  },
+                });
+
+              if (
+                result.count === 0
+              ) {
+                const product =
+                  products.find(
+                    (product) =>
+                      product.id ===
+                      item.productId
+                  );
+
+                throw new Error(
+                  `Недостатньо товару "${product?.name ?? "товару"}" на складі`
+                );
+              }
+            }
+
+            /* =========================
+               CREATE ORDER
+            ========================= */
+
+            return tx.order.create({
+              data: {
+                /*
+                  Авторизований користувач:
+                  userId = його ID.
+
+                  Гість:
+                  userId = null.
+                */
+
+                userId:
+                  req.user?.id ??
+                  null,
+
+                total,
+
+                customerName:
+                  data.customer.name,
+
+                email:
+                  data.customer.email,
+
+                phone:
+                  data.customer.phone,
+
+                city:
+                  data.delivery.city,
+
+                department:
+                  data.delivery
+                    .department ??
+                  null,
+
+                deliveryType:
+                  data.delivery.type,
+
+                payment:
+                  data.payment,
+
+                comment:
+                  data.comment ||
+                  null,
+
+                items: {
+                  create:
+                    items.map(
+                      (item) => {
+                        const product =
+                          products.find(
+                            (product) =>
+                              product.id ===
+                              item.productId
+                          )!;
+
+                        return {
+                          productId:
+                            product.id,
+
+
+                          name:
+                            product.name,
+
+                          price:
+                            product.price,
+
+                          quantity:
+                            item.quantity,
+                        };
+                      }
+                    ),
+                },
+              },
+
+              include: {
+                items: true,
+              },
+            });
+          }
+        );
+
+      return res.status(201).json({
+        data: order,
+      });
+    } catch (error) {
+
+      if (
+        error instanceof Error &&
+        error.message.startsWith(
+          "Недостатньо товару"
+        )
+      ) {
+        return res.status(409).json({
+          message:
+            error.message,
+        });
+      }
+
+      next(error);
+    }
   }
-});
+);
 
 /* =========================
    MY ORDERS
@@ -205,6 +362,7 @@ router.get(
           },
 
           select: {
+            id: true,
             email: true,
           },
         });
@@ -219,7 +377,16 @@ router.get(
       const orders =
         await prisma.order.findMany({
           where: {
-            email: user.email,
+            OR: [
+              {
+                userId: user.id,
+              },
+
+              {
+                userId: null,
+                email: user.email,
+              },
+            ],
           },
 
           include: {
@@ -274,6 +441,7 @@ router.get(
           },
 
           select: {
+            id: true,
             email: true,
           },
         });
@@ -289,7 +457,17 @@ router.get(
         await prisma.order.findFirst({
           where: {
             id,
-            email: user.email,
+
+            OR: [
+              {
+                userId: user.id,
+              },
+
+              {
+                userId: null,
+                email: user.email,
+              },
+            ],
           },
 
           include: {

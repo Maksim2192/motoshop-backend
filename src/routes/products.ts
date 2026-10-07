@@ -61,28 +61,28 @@ router.get(
           ? Number(maxPriceRaw)
           : undefined;
 
+      /* =========================
+         VALIDATION
+      ========================= */
+
       if (
         minPrice !== undefined &&
         Number.isNaN(minPrice)
       ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Некоректна мінімальна ціна",
-          });
+        return res.status(400).json({
+          message:
+            "Некоректна мінімальна ціна",
+        });
       }
 
       if (
         maxPrice !== undefined &&
         Number.isNaN(maxPrice)
       ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Некоректна максимальна ціна",
-          });
+        return res.status(400).json({
+          message:
+            "Некоректна максимальна ціна",
+        });
       }
 
       if (
@@ -90,13 +90,15 @@ router.get(
         maxPrice !== undefined &&
         minPrice > maxPrice
       ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Мінімальна ціна не може бути більшою за максимальну",
-          });
+        return res.status(400).json({
+          message:
+            "Мінімальна ціна не може бути більшою за максимальну",
+        });
       }
+
+      /* =========================
+         WHERE
+      ========================= */
 
       const where: Prisma.ProductWhereInput = {
         isActive: true,
@@ -150,15 +152,9 @@ router.get(
         };
       }
 
-      /* DISCOUNT */
-
-      if (discount) {
-        where.oldPrice = {
-          not: null,
-        };
-      }
-
-      /* SORT */
+      /* =========================
+         SORT
+      ========================= */
 
       let orderBy:
         | Prisma.ProductOrderByWithRelationInput
@@ -220,6 +216,70 @@ router.get(
           break;
       }
 
+      /* =========================
+         DISCOUNT PRODUCTS
+      ========================= */
+
+      if (discount) {
+
+        const allProducts =
+          await prisma.product.findMany({
+            where,
+
+            include: {
+              category: true,
+            },
+
+            orderBy,
+          });
+
+        const discountedProducts =
+          allProducts.filter(
+            (product) =>
+              product.oldPrice !== null &&
+              product.oldPrice >
+                product.price
+          );
+
+        const total =
+          discountedProducts.length;
+
+        const totalPages =
+          Math.ceil(
+            total / limit
+          );
+
+        const skip =
+          (page - 1) * limit;
+
+        const products =
+          discountedProducts.slice(
+            skip,
+            skip + limit
+          );
+
+        return res.json({
+          data: products,
+
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+
+            hasNextPage:
+              page < totalPages,
+
+            hasPrevPage:
+              page > 1,
+          },
+        });
+      }
+
+      /* =========================
+         NORMAL PRODUCTS
+      ========================= */
+
       const skip =
         (page - 1) * limit;
 
@@ -245,37 +305,22 @@ router.get(
         }),
       ]);
 
-      let finalProducts =
-        products;
-
-      if (discount) {
-        finalProducts =
-          products.filter(
-            (product) =>
-              product.oldPrice !== null &&
-              product.oldPrice >
-                product.price
-          );
-      }
+      const totalPages =
+        Math.ceil(
+          total / limit
+        );
 
       return res.json({
-        data: finalProducts,
+        data: products,
 
         pagination: {
           page,
           limit,
           total,
-
-          totalPages:
-            Math.ceil(
-              total / limit
-            ),
+          totalPages,
 
           hasNextPage:
-            page <
-            Math.ceil(
-              total / limit
-            ),
+            page < totalPages,
 
           hasPrevPage:
             page > 1,
@@ -311,12 +356,10 @@ router.get(
         });
 
       if (!product) {
-        return res
-          .status(404)
-          .json({
-            message:
-              "Product not found",
-          });
+        return res.status(404).json({
+          message:
+            "Product not found",
+        });
       }
 
       return res.json({
@@ -344,12 +387,10 @@ router.get(
         !Number.isInteger(id) ||
         id <= 0
       ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Invalid product ID",
-          });
+        return res.status(400).json({
+          message:
+            "Invalid product ID",
+        });
       }
 
       const product =
@@ -365,12 +406,10 @@ router.get(
         });
 
       if (!product) {
-        return res
-          .status(404)
-          .json({
-            message:
-              "Product not found",
-          });
+        return res.status(404).json({
+          message:
+            "Product not found",
+        });
       }
 
       return res.json({
