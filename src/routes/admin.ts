@@ -14,6 +14,73 @@ router.use(auth("ADMIN"));
 // SCHEMAS
 // ======================================================
 
+
+const categorySchema = z.object({
+  name: z.string().trim().min(2, "Назва має містити мінімум 2 символи"),
+});
+
+function createCategorySlug(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-zа-яіїєґ0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+router.post("/categories", async (req, res, next) => {
+  try {
+    const { name } = categorySchema.parse(req.body);
+
+    const baseSlug = createCategorySlug(name);
+
+    if (!baseSlug) {
+      return res.status(400).json({
+        message: "Не вдалося створити slug категорії",
+      });
+    }
+
+    const existingCategory = await prisma.category.findFirst({
+      where: {
+        name: {
+          equals: name,
+          mode: "insensitive",
+        },
+      },
+    });
+
+    if (existingCategory) {
+      return res.status(409).json({
+        message: "Категорія з такою назвою вже існує",
+      });
+    }
+
+    let slug = baseSlug;
+    let suffix = 2;
+
+    while (
+      await prisma.category.findUnique({
+        where: { slug },
+      })
+    ) {
+      slug = `${baseSlug}-${suffix}`;
+      suffix++;
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        name,
+        slug,
+      },
+    });
+
+    return res.status(201).json({
+      data: category,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const productSchema = z.object({
   name: z.string().min(2),
 
